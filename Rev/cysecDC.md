@@ -1,4 +1,6 @@
-# Finding hash type
+# Solution
+
+## Finding hash type
 
 use objdump on the file,
 
@@ -12,7 +14,9 @@ cause obviously, this is the main function.
 
 I'll be using `binary ninja` simultaneously to draw conclusions on the assembly code. If you use ghidra or IDA then the output will be similar, it's just that I like binary ninja more.
 
-## part 1 - Input size check
+Note that the decompiled code will also be hard to read because there aren't any debugging symbols present in the binary (that is, I've compiled it as a stripped binary) so, you'll have to sit and bear with it. It's fun tho!
+
+### part 1 - Input size check
 
 This is binary ninja's decompiled code,
 
@@ -102,7 +106,7 @@ This is what runs when the compare instruction fails. We can see that it's loadi
 
 This is basically just checking for stack overflows using the canary value. We can see the `sub` instruction over at the address where the canary is located. It's probably going to then check if this value is non-zero in which case there has been a binary overflow. This mangled string is representing the "std::string" initialiser,  `<_ZNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEED1Ev@plt>`. So, we can see that if we get the first check wrong, that is, if our input string is not less than or equal to 64 in length, then we will be pushed out of the program with a message. 
 
-## part 2 - Figuring out the algorithm
+### part 2 - Figuring out the algorithm
 
 Now let's go back to the main function again. This is the binary ninja's decompiled version
 
@@ -466,9 +470,148 @@ The name probably gives it away as well ;).
 
 ---
 
-# Hash cracking
+So, back to the main function, following from `convert-to-binary`, if you would recall, we called a bunch of other functions in succession on the input. So, what gives away the hash-type in the end? 
 
-once you've figured out the hashing algorithm, and you've obtained the hash for the password per se, you need to crack it using the pharases list given to you. 
+You're expected to go over each function and do a similar analysis as I have presented above, this will give you a deep understanding of whats actually going on, and in general improve your assembly skills. But, the function names have also been made to hint at the hash type, 
+
+a. convert_to_binary
+b. pad_to_512bits
+c. resize_block
+d. compute_hash
+
+If you go and google you'll immediately find that this structure is used in SHA256 (or any other SHA-2 family member actually, the most famous one being SHA256). And thats valid, but what would be extremely awesome is if we can figure out what compute_hash is doing, cause obviously, this has the most effect on what the hash type is.
+
+---
+
+`Compute hash function`
+
+Let's start with the decompiled function first (cause thats obviously the easier one to analyse)
+
+		000034f2    class std::string* compute_hash(class std::string* arg1, int64_t* arg2)
+		00003510      void* fsbase
+		00003510      int64_t rax = *(fsbase + 0x28)
+		00003538      void var_428
+		00003538      __builtin_memcpy(dest: &var_428, src: &data_7120, n: 0x200)
+		00003585      void var_228
+		00003585      
+		00003585      for (int32_t i = 0; i s<= 0xf; i += 1)
+		0000356f          *(&var_228 + (sx.q(i) << 3)) = zx.q((*std::vector<uint64_t>::operator[](arg2, sx.q(i))).d)
+		0000356f      
+		0000370f      for (int32_t i_1 = 0x10; i_1 s<= 0x3f; i_1 += 1)
+		000035fe          int64_t rdx_5 = (*(&var_228 + (sx.q(i_1 - 2) << 3)) u>> 0x11 | *(&var_228 + (sx.q(i_1 - 2) << 3)) << 0xf) ^ (*(&var_228 + (sx.q(i_1 - 2) << 3)) << 0xd | *(&var_228 + (sx.q(i_1 - 2) << 3)) u>> 0x13)
+		00003699          int64_t rcx_4 = (*(&var_228 + (sx.q(i_1 - 0xf) << 3)) u>> 7 | *(&var_228 + (sx.q(i_1 - 0xf) << 3)) << 0x19) ^ (*(&var_228 + (sx.q(i_1 - 0xf) << 3)) << 0xe | *(&var_228 + (sx.q(i_1 - 0xf) << 3)) u>> 0x12)
+		000036b6          int64_t rdx_8 = (rdx_5 ^ *(&var_228 + (sx.q(i_1 - 2) << 3)) u>> 0xa) + *(&var_228 + (sx.q(i_1 - 7) << 3)) + (*(&var_228 + (sx.q(i_1 - 0xf) << 3)) u>> 3 ^ rcx_4)
+		000036d7          *(&var_228 + (sx.q(i_1) << 3)) = rdx_8 + *(&var_228 + (sx.q(i_1 - 0x10) << 3))
+		000036f9          *(&var_228 + (sx.q(i_1) << 3)) = zx.q((*(&var_228 + (sx.q(i_1) << 3))).d)
+		000036f9      
+		0000371c      uint64_t compute_hash(std::vector<uint64_t>)::H0_1 = compute_hash(std::vector<uint64_t>)::H0
+		0000372a      uint64_t compute_hash(std::vector<uint64_t>)::H1_1 = compute_hash(std::vector<uint64_t>)::H1
+		00003738      uint64_t compute_hash(std::vector<uint64_t>)::H2_1 = compute_hash(std::vector<uint64_t>)::H2
+		00003746      uint64_t compute_hash(std::vector<uint64_t>)::H3_1 = compute_hash(std::vector<uint64_t>)::H3
+		00003754      uint64_t compute_hash(std::vector<uint64_t>)::H4_1 = compute_hash(std::vector<uint64_t>)::H4
+		00003762      uint32_t compute_hash(std::vector<uint64_t>)::H5_1 = (compute_hash(std::vector<uint64_t>)::H5).d
+		00003770      uint32_t compute_hash(std::vector<uint64_t>)::H6_1 = (compute_hash(std::vector<uint64_t>)::H6).d
+		0000377e      uint32_t compute_hash(std::vector<uint64_t>)::H7_1 = (compute_hash(std::vector<uint64_t>)::H7).d
+		0000377e      
+		00003977      for (int32_t i_2 = 0; i_2 s<= 0x3f; i_2 += 1)
+		0000381e          int32_t rdx_16 = (((compute_hash(std::vector<uint64_t>)::H4_1 u>> 6).d | (compute_hash(std::vector<uint64_t>)::H4_1 << 0x1a).d) ^ ((compute_hash(std::vector<uint64_t>)::H4_1 << 0x15).d | (compute_hash(std::vector<uint64_t>)::H4_1 u>> 0xb).d) ^ ((compute_hash(std::vector<uint64_t>)::H4_1 << 7).d | (compute_hash(std::vector<uint64_t>)::H4_1 u>> 0x19).d)) + compute_hash(std::vector<uint64_t>)::H7_1 + (((not.q(compute_hash(std::vector<uint64_t>)::H4_1)).d & compute_hash(std::vector<uint64_t>)::H6_1) ^ (compute_hash(std::vector<uint64_t>)::H4_1.d & compute_hash(std::vector<uint64_t>)::H5_1))
+		00003845          int32_t rax_110 = (*(&var_228 + (sx.q(i_2) << 3))).d + rdx_16 + (*(&var_428 + (sx.q(i_2) << 3))).d
+		000038d5          int32_t rax_131 = ((compute_hash(std::vector<uint64_t>)::H1_1.d & compute_hash(std::vector<uint64_t>)::H2_1.d) ^ ((compute_hash(std::vector<uint64_t>)::H1_1.d ^ compute_hash(std::vector<uint64_t>)::H2_1.d) & compute_hash(std::vector<uint64_t>)::H0_1.d)) + (((compute_hash(std::vector<uint64_t>)::H0_1 u>> 2).d | (compute_hash(std::vector<uint64_t>)::H0_1 << 0x1e).d) ^ ((compute_hash(std::vector<uint64_t>)::H0_1 << 0x13).d | (compute_hash(std::vector<uint64_t>)::H0_1 u>> 0xd).d) ^ ((compute_hash(std::vector<uint64_t>)::H0_1 << 0xa).d | (compute_hash(std::vector<uint64_t>)::H0_1 u>> 0x16).d))
+		000038e6          compute_hash(std::vector<uint64_t>)::H7_1 = compute_hash(std::vector<uint64_t>)::H6_1
+		000038f4          compute_hash(std::vector<uint64_t>)::H6_1 = compute_hash(std::vector<uint64_t>)::H5_1
+		00003902          compute_hash(std::vector<uint64_t>)::H5_1 = compute_hash(std::vector<uint64_t>)::H4_1.d
+		0000391d          compute_hash(std::vector<uint64_t>)::H4_1 = zx.q((rax_110 + compute_hash(std::vector<uint64_t>)::H3_1.d) & 0xffffffff)
+		0000392b          compute_hash(std::vector<uint64_t>)::H3_1 = compute_hash(std::vector<uint64_t>)::H2_1
+		00003939          compute_hash(std::vector<uint64_t>)::H2_1 = compute_hash(std::vector<uint64_t>)::H1_1
+		00003947          compute_hash(std::vector<uint64_t>)::H1_1 = compute_hash(std::vector<uint64_t>)::H0_1
+		00003962          compute_hash(std::vector<uint64_t>)::H0_1 = zx.q((rax_131 + rax_110) & 0xffffffff)
+		00003962      
+		00003990      compute_hash(std::vector<uint64_t>)::H0 = zx.q(compute_hash(std::vector<uint64_t>)::H0_1.d + (compute_hash(std::vector<uint64_t>)::H0).d)
+		000039aa      compute_hash(std::vector<uint64_t>)::H1 = zx.q(compute_hash(std::vector<uint64_t>)::H1_1.d + (compute_hash(std::vector<uint64_t>)::H1).d)
+		000039c4      compute_hash(std::vector<uint64_t>)::H2 = zx.q(compute_hash(std::vector<uint64_t>)::H2_1.d + (compute_hash(std::vector<uint64_t>)::H2).d)
+		000039de      compute_hash(std::vector<uint64_t>)::H3 = zx.q(compute_hash(std::vector<uint64_t>)::H3_1.d + (compute_hash(std::vector<uint64_t>)::H3).d)
+		000039f8      compute_hash(std::vector<uint64_t>)::H4 = zx.q(compute_hash(std::vector<uint64_t>)::H4_1.d + (compute_hash(std::vector<uint64_t>)::H4).d)
+		00003a12      compute_hash(std::vector<uint64_t>)::H5 = zx.q(compute_hash(std::vector<uint64_t>)::H5_1 + (compute_hash(std::vector<uint64_t>)::H5).d)
+		00003a2c      compute_hash(std::vector<uint64_t>)::H6 = zx.q(compute_hash(std::vector<uint64_t>)::H6_1 + (compute_hash(std::vector<uint64_t>)::H6).d)
+		00003a46      compute_hash(std::vector<uint64_t>)::H7 = zx.q(compute_hash(std::vector<uint64_t>)::H7_1 + (compute_hash(std::vector<uint64_t>)::H7).d)
+		00003a61      void var_448
+		00003a61      show_as_hex(&var_448, (compute_hash(std::vector<uint64_t>)::H7).d)
+		00003a7a      void var_488
+		00003a7a      show_as_hex(&var_488, (compute_hash(std::vector<uint64_t>)::H6).d)
+		00003a93      void var_4c8
+		00003a93      show_as_hex(&var_4c8, (compute_hash(std::vector<uint64_t>)::H5).d)
+		00003aac      void var_508
+		00003aac      show_as_hex(&var_508, (compute_hash(std::vector<uint64_t>)::H4).d)
+		00003ac5      void var_548
+		00003ac5      show_as_hex(&var_548, (compute_hash(std::vector<uint64_t>)::H3).d)
+		00003ade      void var_588
+		00003ade      show_as_hex(&var_588, (compute_hash(std::vector<uint64_t>)::H2).d)
+		00003af7      void var_5c8
+		00003af7      show_as_hex(&var_5c8, (compute_hash(std::vector<uint64_t>)::H1).d)
+		00003b10      void var_5e8
+		00003b10      show_as_hex(&var_5e8, (compute_hash(std::vector<uint64_t>)::H0).d)
+		00003b30      void var_5a8
+		00003b30      std::operator+<char>(&var_5a8, &var_5e8, &var_5c8)
+		00003b50      void var_568
+		00003b50      std::operator+<char>(&var_568, &var_5a8, &var_588)
+		00003b70      void var_528
+		00003b70      std::operator+<char>(&var_528, &var_568, &var_548)
+		00003b90      void var_4e8
+		00003b90      std::operator+<char>(&var_4e8, &var_528, &var_508)
+		00003bb0      void var_4a8
+		00003bb0      std::operator+<char>(&var_4a8, &var_4e8, &var_4c8)
+		00003bd0      void var_468
+		00003bd0      std::operator+<char>(&var_468, &var_4a8, &var_488)
+		00003bf0      std::operator+<char>(arg1, &var_468, &var_448)
+		00003c00      std::string::~string(this: &var_468)
+		00003c0f      std::string::~string(this: &var_4a8)
+		00003c1e      std::string::~string(this: &var_4e8)
+		00003c2d      std::string::~string(this: &var_528)
+		00003c3c      std::string::~string(this: &var_568)
+		00003c4b      std::string::~string(this: &var_5a8)
+		00003c5a      std::string::~string(this: &var_5e8)
+		00003c69      std::string::~string(this: &var_5c8)
+		00003c78      std::string::~string(this: &var_588)
+		00003c87      std::string::~string(this: &var_548)
+		00003c96      std::string::~string(this: &var_508)
+		00003ca5      std::string::~string(this: &var_4c8)
+		00003cb4      std::string::~string(this: &var_488)
+		00003cc3      std::string::~string(this: &var_448)
+		00003ccd      *(fsbase + 0x28)
+		00003ccd      
+		00003cd6      if (rax == *(fsbase + 0x28))
+		00003e4b          return arg1
+		00003e4b      
+		00003e3a      __stack_chk_fail()
+		00003e3a      noreturn
+
+
+Its pretty big, so lets go step-by-step.
+
+First thing we notice is the canary again, what gives it away? Its the 0x28 being added to rax and then being checked again in the end, before calling the `__stack_chk_fail()` function. We're passing 2 variables in this, `arg1` and `arg2`, `arg1 being a string` and `arg2 being a pointer` to something (possibly a vector). 
+
+Now, its a lot of bit manipulation. That's exactly what SHA is about, a bunch of bit rotations, shifts, xors etc. This is a mess and understandbly so. But we can still pick up some important things from here. Firstly notice that a lot of the actual manipulations happen inside the for loop and we are showing all output as hex (understandable from the name).
+
+Don't be confused with compute_hash inside this, note that this is a class and not a function, and we're not calling this inside anyway,it's actually accessing variables that belong to the compute_hash class.
+
+We can see what those values are! (usually, such values are present in the .data section of the decompiled code)
+
+		0000b010  uint64_t compute_hash(std::vector<uint64_t>)::H0 = 0x6a09e667
+		0000b018  uint64_t compute_hash(std::vector<uint64_t>)::H1 = 0xbb67ae85
+		0000b020  uint64_t compute_hash(std::vector<uint64_t>)::H2 = 0x3c6ef372
+		0000b028  uint64_t compute_hash(std::vector<uint64_t>)::H3 = 0xa54ff53a
+		0000b030  uint64_t compute_hash(std::vector<uint64_t>)::H4 = 0x510e527f
+		0000b038  uint64_t compute_hash(std::vector<uint64_t>)::H5 = 0x9b05688c
+		0000b040  uint64_t compute_hash(std::vector<uint64_t>)::H6 = 0x1f83d9ab
+		0000b048  uint64_t compute_hash(std::vector<uint64_t>)::H7 = 0x5be0cd19
+
+And this is the biggest hint. If you google these numbers, you'll realise that this is actually a standard set of numbers used in SHA256!
+
+So, we have now understood that its hashing our input using SHA256 and comparing that to an inbuilt hash. At that remains is cracking it.
+
+## Hash cracking
+
+Now once you've figured out the hashing algorithm, and you've obtained the hash for the password per se, you need to crack it using the pharases list given to you. 
 
 If you want you can do this manually using (note the presence of `-n`)
 
